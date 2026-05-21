@@ -20,8 +20,10 @@ export default async function DashboardPage() {
     .filter((t) => t.type === 'thu_quy')
     .reduce((sum, t) => sum + t.amount, 0);
 
-  // Total cost of all events
-  const totalEventExpenses = activities.reduce((sum, a) => sum + a.total_amount, 0);
+  // Total cost of all events that use the Common Fund
+  const totalEventExpenses = activities
+    .filter((a) => a.paid_by_member_id === 'quy_chung')
+    .reduce((sum, a) => sum + a.total_amount, 0);
 
   // Dynamic Available Group Fund (Cash in Vault)
   const totalFund = totalFundContributions - totalEventExpenses;

@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { addMemberAction, addFundContributionAction, addReimbursementAction } from '../app/actions';
 import { Member, Transaction, Activity } from '../types';
-import { UserPlus, Wallet, Search, TrendingUp, TrendingDown, ArrowRightLeft, Plus, DollarSign, Check, X, RefreshCw } from 'lucide-react';
+import { UserPlus, Wallet, Search, TrendingUp, TrendingDown, ArrowRightLeft, Plus, DollarSign, Check, X, RefreshCw, Calendar, ChevronDown, ChevronLeft, ChevronRight, Globe } from 'lucide-react';
 import { isUrl, getInitials, getAvatarColor } from '../lib/utils';
 
 interface MembersClientProps {
@@ -39,6 +39,13 @@ export default function MembersClient({
   const prevMonthTag = `quy_thang_${prevMonth}_${prevYear}`;
 
   const [selectedMonth, setSelectedMonth] = useState(currentMonthTag);
+
+  // Custom dropdown states
+  const [showMemberDropdown, setShowMemberDropdown] = useState(false);
+  const [showCalendarDropdown, setShowCalendarDropdown] = useState(false);
+  const [memberSearchQuery, setMemberSearchQuery] = useState('');
+  const [selectedDayDate, setSelectedDayDate] = useState<Date | null>(new Date());
+  const [calendarViewDate, setCalendarViewDate] = useState<Date>(new Date());
   
   // Form values
   const [newMemberName, setNewMemberName] = useState('');
@@ -58,6 +65,45 @@ export default function MembersClient({
 
   const getNumericValue = (formatted: string) => {
     return parseInt(formatted.replace(/[^0-9]/g, '')) || 0;
+  };
+
+  // Helper to generate grid of days for calendar
+  const getDaysInMonthGrid = (date: Date) => {
+    const year = date.getFullYear();
+    const month = date.getMonth();
+    
+    const firstDayIndex = new Date(year, month, 1).getDay();
+    const totalDays = new Date(year, month + 1, 0).getDate();
+    const prevTotalDays = new Date(year, month, 0).getDate();
+    
+    const cells = [];
+    
+    for (let i = firstDayIndex - 1; i >= 0; i--) {
+      cells.push({
+        day: prevTotalDays - i,
+        isCurrentMonth: false,
+        date: new Date(year, month - 1, prevTotalDays - i)
+      });
+    }
+    
+    for (let i = 1; i <= totalDays; i++) {
+      cells.push({
+        day: i,
+        isCurrentMonth: true,
+        date: new Date(year, month, i)
+      });
+    }
+    
+    const remaining = 42 - cells.length;
+    for (let i = 1; i <= remaining; i++) {
+      cells.push({
+        day: i,
+        isCurrentMonth: false,
+        date: new Date(year, month + 1, i)
+      });
+    }
+    
+    return cells;
   };
 
   // Filter members based on search
@@ -314,39 +360,247 @@ export default function MembersClient({
 
             <form onSubmit={handleFundSubmit} className="space-y-4 pb-16">
               {/* Member Selection */}
-              <div className="space-y-1.5">
+              <div className="space-y-1.5 relative">
                 <label className="text-xs font-bold text-zinc-500 dark:text-zinc-400">
                   Chọn thành viên
                 </label>
-                <select
-                  value={selectedMemberId}
-                  onChange={(e) => setSelectedMemberId(e.target.value)}
-                  className="w-full px-4 py-3 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                
+                {/* Trigger Button */}
+                <button
+                  type="button"
+                  onClick={() => setShowMemberDropdown(!showMemberDropdown)}
+                  className="flex items-center justify-between w-full px-4 py-3 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-sm cursor-pointer transition-all text-left"
                 >
-                  <option value="">-- Chọn thành viên --</option>
-                  {initialMembers.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.name} ({formatVND(m.current_balance)})
-                    </option>
-                  ))}
-                </select>
+                  <div className="flex items-center gap-2 min-w-0">
+                    {selectedMemberId ? (
+                      (() => {
+                        const m = initialMembers.find((member) => member.id === selectedMemberId);
+                        if (!m) return <span className="text-zinc-400 dark:text-zinc-500">Chọn thành viên...</span>;
+                        return (
+                          <>
+                            {isUrl(m.avatar) ? (
+                              <img src={m.avatar} alt={m.name} className="w-5 h-5 rounded-full object-cover shrink-0" />
+                            ) : (
+                              <div className={`w-5 h-5 rounded-full flex items-center justify-center font-bold text-[8px] shrink-0 ${getAvatarColor(m.id)}`}>
+                                {getInitials(m.name)}
+                              </div>
+                            )}
+                            <span className="truncate text-zinc-800 dark:text-zinc-200">
+                              {m.name} <span className="text-[10px] font-normal text-zinc-400">({formatVND(m.current_balance)})</span>
+                            </span>
+                          </>
+                        );
+                      })()
+                    ) : (
+                      <span className="text-zinc-400 dark:text-zinc-500 font-normal">Chọn thành viên...</span>
+                    )}
+                  </div>
+                  <ChevronDown className="w-4 h-4 text-zinc-400 shrink-0" />
+                </button>
+
+                {/* Dropdown Overlay Click-away */}
+                {showMemberDropdown && (
+                  <div className="fixed inset-0 z-10" onClick={() => setShowMemberDropdown(false)} />
+                )}
+
+                {/* Dropdown Menu */}
+                {showMemberDropdown && (
+                  <div className="absolute top-full left-0 right-0 mt-1.5 bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 rounded-2xl shadow-xl z-20 overflow-hidden flex flex-col max-h-60 animate-in fade-in-50 slide-in-from-top-1 duration-100">
+                    {/* Search Field */}
+                    <div className="p-2 border-b border-zinc-100 dark:border-zinc-800 flex items-center gap-2 shrink-0">
+                      <Search className="w-3.5 h-3.5 text-zinc-400" />
+                      <input
+                        type="text"
+                        placeholder="Tìm thành viên..."
+                        value={memberSearchQuery}
+                        onChange={(e) => setMemberSearchQuery(e.target.value)}
+                        className="w-full bg-transparent border-0 text-xs text-zinc-800 dark:text-zinc-200 focus:outline-none placeholder-zinc-450"
+                        autoFocus
+                      />
+                      {memberSearchQuery && (
+                        <button type="button" onClick={() => setMemberSearchQuery('')} className="text-zinc-450 hover:text-zinc-600 dark:hover:text-zinc-300">
+                          <X className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
+                    {/* Items List */}
+                    <div className="overflow-y-auto py-1 max-h-48 divide-y divide-zinc-50 dark:divide-zinc-850/50">
+                      {initialMembers
+                        .filter((m) => m.name.toLowerCase().includes(memberSearchQuery.toLowerCase()))
+                        .map((m) => {
+                          const isSelected = selectedMemberId === m.id;
+                          return (
+                            <button
+                              key={m.id}
+                              type="button"
+                              onClick={() => {
+                                setSelectedMemberId(m.id);
+                                setShowMemberDropdown(false);
+                                setMemberSearchQuery('');
+                              }}
+                              className={`flex items-center justify-between w-full px-3.5 py-2.5 text-left text-xs font-semibold hover:bg-zinc-50 dark:hover:bg-zinc-800/50 cursor-pointer ${
+                                isSelected ? 'bg-emerald-500/5 text-emerald-600 dark:text-emerald-400' : 'text-zinc-700 dark:text-zinc-300'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                {isUrl(m.avatar) ? (
+                                  <img src={m.avatar} alt={m.name} className="w-6 h-6 rounded-full object-cover shrink-0" />
+                                ) : (
+                                  <div className={`w-6 h-6 rounded-full flex items-center justify-center font-bold text-[9px] shrink-0 ${getAvatarColor(m.id)}`}>
+                                    {getInitials(m.name)}
+                                  </div>
+                                )}
+                                <div className="truncate flex flex-col">
+                                  <span>{m.name}</span>
+                                  <span className="text-[10px] font-normal text-zinc-400">
+                                    Số dư: {formatVND(m.current_balance)}
+                                  </span>
+                                </div>
+                              </div>
+                              {isSelected && <Check className="w-4 h-4 text-emerald-500 shrink-0" />}
+                            </button>
+                          );
+                        })}
+                      {initialMembers.filter((m) => m.name.toLowerCase().includes(memberSearchQuery.toLowerCase())).length === 0 && (
+                        <div className="p-4 text-center text-xs text-zinc-400 dark:text-zinc-500">
+                          Không tìm thấy thành viên
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Month Selection */}
               {!isReimbursement && (
-                <div className="space-y-1.5">
+                <div className="space-y-1.5 relative">
                   <label className="text-xs font-bold text-zinc-500 dark:text-zinc-400">
                     Kỳ đóng quỹ
                   </label>
-                  <select
-                    value={selectedMonth}
-                    onChange={(e) => setSelectedMonth(e.target.value)}
-                    className="w-full px-4 py-3 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  
+                  {/* Trigger Button */}
+                  <button
+                    type="button"
+                    onClick={() => setShowCalendarDropdown(!showCalendarDropdown)}
+                    className="flex items-center justify-between w-full px-4 py-3 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-sm cursor-pointer text-left"
                   >
-                    <option value="general_fund">Đóng quỹ chung (Không theo tháng)</option>
-                    <option value={currentMonthTag}>Đóng quỹ tháng {currentMonth}/{currentYear} (Tháng hiện tại)</option>
-                    <option value={prevMonthTag}>Đóng quỹ tháng {prevMonth}/{prevYear} (Tháng trước)</option>
-                  </select>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Calendar className="w-4 h-4 text-zinc-400 shrink-0" />
+                      <span className="truncate">
+                        {selectedMonth === 'general_fund'
+                          ? 'Đóng quỹ chung (Không theo tháng)'
+                          : (() => {
+                              const parts = selectedMonth.split('_');
+                              return `Đóng quỹ tháng ${parts[2]}/${parts[3]}`;
+                            })()}
+                      </span>
+                    </div>
+                    <ChevronDown className="w-4 h-4 text-zinc-400 shrink-0" />
+                  </button>
+
+                  {/* Dropdown Overlay Click-away */}
+                  {showCalendarDropdown && (
+                    <div className="fixed inset-0 z-10" onClick={() => setShowCalendarDropdown(false)} />
+                  )}
+
+                  {/* Dropdown Menu (Calendar) */}
+                  {showCalendarDropdown && (
+                    <div className="absolute top-full left-0 right-0 mt-1.5 p-3.5 bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 rounded-2xl shadow-xl z-20 flex flex-col gap-3.5 animate-in fade-in-50 slide-in-from-top-1 duration-100">
+                      
+                      {/* Calendar Header */}
+                      <div className="flex items-center justify-between px-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => setCalendarViewDate(new Date(calendarViewDate.getFullYear(), calendarViewDate.getMonth() - 1, 1))}
+                          className="p-1 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-500 dark:text-zinc-450 hover:text-zinc-800 dark:hover:text-zinc-200 cursor-pointer active:scale-95 transition-all"
+                        >
+                          <ChevronLeft className="w-4 h-4" />
+                        </button>
+                        <span className="text-[10px] font-extrabold text-zinc-800 dark:text-zinc-100 uppercase tracking-wider">
+                          Tháng {String(calendarViewDate.getMonth() + 1).padStart(2, '0')}, {calendarViewDate.getFullYear()}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setCalendarViewDate(new Date(calendarViewDate.getFullYear(), calendarViewDate.getMonth() + 1, 1))}
+                          className="p-1 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-500 dark:text-zinc-450 hover:text-zinc-800 dark:hover:text-zinc-200 cursor-pointer active:scale-95 transition-all"
+                        >
+                          <ChevronRight className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      {/* Weekday Row */}
+                      <div className="grid grid-cols-7 gap-1 text-center shrink-0">
+                        {['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'].map((wd) => (
+                          <span key={wd} className="text-[9px] font-extrabold text-zinc-400 dark:text-zinc-500 uppercase tracking-widest py-0.5">
+                            {wd}
+                          </span>
+                        ))}
+                      </div>
+
+                      {/* Day Cells Grid */}
+                      <div className="grid grid-cols-7 gap-1">
+                        {getDaysInMonthGrid(calendarViewDate).map((cell, idx) => {
+                          const cellMonth = String(cell.date.getMonth() + 1).padStart(2, '0');
+                          const cellYear = String(cell.date.getFullYear());
+                          const cellTag = `quy_thang_${cellMonth}_${cellYear}`;
+                          
+                          const isMonthSelected = selectedMonth === cellTag;
+                          const isDaySelected = selectedDayDate && 
+                            selectedDayDate.getDate() === cell.date.getDate() &&
+                            selectedDayDate.getMonth() === cell.date.getMonth() &&
+                            selectedDayDate.getFullYear() === cell.date.getFullYear();
+                          const isToday = new Date().toDateString() === cell.date.toDateString();
+
+                          return (
+                            <button
+                              key={idx}
+                              type="button"
+                              onClick={() => {
+                                setSelectedMonth(cellTag);
+                                setSelectedDayDate(cell.date);
+                                setShowCalendarDropdown(false);
+                              }}
+                              className={`w-full aspect-square rounded-lg flex items-center justify-center text-xs font-bold transition-all cursor-pointer relative active:scale-95 ${
+                                !cell.isCurrentMonth
+                                  ? 'text-zinc-300 dark:text-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-850/30'
+                                  : isDaySelected
+                                  ? 'bg-emerald-500 text-white shadow-md shadow-emerald-500/20'
+                                  : isMonthSelected
+                                  ? 'bg-emerald-500/10 dark:bg-emerald-500/5 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20'
+                                  : 'text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-850'
+                              }`}
+                            >
+                              <span>{cell.day}</span>
+                              {isToday && !isDaySelected && (
+                                <span className="absolute bottom-1.5 w-1 h-1 bg-emerald-500 rounded-full animate-pulse" />
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* General Fund Toggle (Quick Button) */}
+                      <div className="border-t border-zinc-100 dark:border-zinc-800 pt-2 mt-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedMonth('general_fund');
+                            setSelectedDayDate(null);
+                            setShowCalendarDropdown(false);
+                          }}
+                          className={`flex items-center justify-center gap-2 w-full py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer active:scale-95 ${
+                            selectedMonth === 'general_fund'
+                              ? 'bg-indigo-500 text-white shadow-md shadow-indigo-500/20'
+                              : 'bg-zinc-50 hover:bg-zinc-100 dark:bg-zinc-950 dark:hover:bg-zinc-850 text-indigo-600 dark:text-indigo-400'
+                          }`}
+                        >
+                          <Globe className="w-3.5 h-3.5" />
+                          <span>Đóng quỹ chung (Không theo tháng)</span>
+                        </button>
+                      </div>
+                      
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -408,7 +662,7 @@ export default function MembersClient({
           </span>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3">
           {initialMembers.map((member) => {
             const hasPaidThisMonth = initialTransactions.some(
               (tx) => tx.member_id === member.id && tx.activity_id === currentMonthTag && tx.type === 'thu_quy'

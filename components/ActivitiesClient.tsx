@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { addActivityAction, confirmTransactionPaidAction } from '../app/actions';
 import { Member, Activity, Transaction } from '../types';
-import { Calendar, User, DollarSign, Users, PlusCircle, Check, X, FileText, CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react';
+import { Calendar, User, DollarSign, Users, PlusCircle, Check, X, FileText, CheckCircle2, AlertCircle, RefreshCw, ChevronDown, Search } from 'lucide-react';
 import { isUrl, getInitials, getAvatarColor } from '../lib/utils';
 
 interface ActivitiesClientProps {
@@ -32,6 +32,38 @@ export default function ActivitiesClient({
   const [paidBy, setPaidBy] = useState('quy_chung');
   const [participants, setParticipants] = useState<string[]>(initialMembers.map((m) => m.id)); // Default select all
   const [notes, setNotes] = useState('');
+  const [splitMode, setSplitMode] = useState<'equal' | 'individual'>('equal');
+  const [customShares, setCustomShares] = useState<{ [memberId: string]: string }>({});
+
+  // Custom dropdown states
+  const [showPayerDropdown, setShowPayerDropdown] = useState(false);
+  const [payerSearchQuery, setPayerSearchQuery] = useState('');
+
+  const handlePaidByToggle = (mode: 'quy_chung' | 'rieng') => {
+    if (mode === 'quy_chung') {
+      setPaidBy('quy_chung');
+    } else {
+      if (paidBy === 'quy_chung') {
+        setPaidBy(initialMembers[0]?.id || '');
+      }
+    }
+  };
+
+  const handleSplitModeChange = (mode: 'equal' | 'individual') => {
+    setSplitMode(mode);
+    if (mode === 'individual') {
+      const currentTotal = getNumericValue(totalAmount);
+      if (currentTotal > 0 && participants.length > 0) {
+        const splitVal = Math.round(currentTotal / participants.length);
+        const formattedSplit = formatRawValue(splitVal.toString());
+        const newShares: { [memberId: string]: string } = {};
+        participants.forEach((pId) => {
+          newShares[pId] = formattedSplit;
+        });
+        setCustomShares(newShares);
+      }
+    }
+  };
 
   // Auto-format currency typing (Vietnamese dots separation)
   const formatRawValue = (val: string) => {
@@ -46,19 +78,56 @@ export default function ActivitiesClient({
 
   // Helper to toggle participants
   const toggleParticipant = (memberId: string) => {
-    setParticipants((prev) =>
-      prev.includes(memberId)
+    setParticipants((prev) => {
+      const next = prev.includes(memberId)
         ? prev.filter((id) => id !== memberId)
-        : [...prev, memberId]
-    );
+        : [...prev, memberId];
+      
+      if (splitMode === 'individual') {
+        const sum = next.reduce((acc, mId) => {
+          return acc + getNumericValue(customShares[mId] || '');
+        }, 0);
+        setTotalAmount(sum > 0 ? formatRawValue(sum.toString()) : '');
+      }
+      
+      return next;
+    });
   };
 
   const selectAllParticipants = () => {
-    setParticipants(initialMembers.map((m) => m.id));
+    const all = initialMembers.map((m) => m.id);
+    setParticipants(all);
+    if (splitMode === 'individual') {
+      const sum = all.reduce((acc, mId) => {
+        return acc + getNumericValue(customShares[mId] || '');
+      }, 0);
+      setTotalAmount(sum > 0 ? formatRawValue(sum.toString()) : '');
+    }
   };
 
   const deselectAllParticipants = () => {
     setParticipants([]);
+    if (splitMode === 'individual') {
+      setTotalAmount('');
+    }
+  };
+
+  const updateCustomShare = (memberId: string, val: string) => {
+    const formatted = formatRawValue(val);
+    const updated = {
+      ...customShares,
+      [memberId]: formatted,
+    };
+    setCustomShares(updated);
+    
+    const sum = Object.keys(updated).reduce((acc, mId) => {
+      if (participants.includes(mId)) {
+        return acc + getNumericValue(updated[mId]);
+      }
+      return acc;
+    }, 0);
+    
+    setTotalAmount(sum > 0 ? formatRawValue(sum.toString()) : '');
   };
 
   // Form submit handler
@@ -78,11 +147,22 @@ export default function ActivitiesClient({
       return;
     }
 
-    // Paid by is always 'quy_chung'
-
     if (participants.length === 0) {
       setFormError('Vui lòng chọn ít nhất 1 người tham gia');
       return;
+    }
+
+    // Individual split validation
+    const numericShares: { [memberId: string]: number } = {};
+    if (splitMode === 'individual') {
+      for (const pId of participants) {
+        const shareVal = getNumericValue(customShares[pId] || '');
+        if (shareVal <= 0) {
+          setFormError(`Vui lòng nhập số tiền hợp lệ cho ${initialMembers.find((m) => m.id === pId)?.name}`);
+          return;
+        }
+        numericShares[pId] = shareVal;
+      }
     }
 
     setIsSubmitting(true);
@@ -91,7 +171,8 @@ export default function ActivitiesClient({
       amount,
       paidBy,
       participants,
-      notes
+      notes,
+      splitMode === 'individual' ? numericShares : undefined
     );
     setIsSubmitting(false);
 
@@ -101,6 +182,8 @@ export default function ActivitiesClient({
       setTitle('');
       setTotalAmount('');
       setPaidBy('quy_chung');
+      setSplitMode('equal');
+      setCustomShares({});
       setParticipants(initialMembers.map((m) => m.id));
       setNotes('');
       
@@ -204,10 +287,182 @@ export default function ActivitiesClient({
                 />
               </div>
 
-              {/* Cost only (Payer removed, paid by common fund) */}
+              {/* Paid By / Event Type Selector */}
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-zinc-500 dark:text-zinc-400">
-                  Tổng số tiền chi tiêu (VND)
+                  Nguồn chi trả / Loại cuộc vui
+                </label>
+                <div className="grid grid-cols-2 gap-2 p-1 rounded-xl bg-zinc-100 dark:bg-zinc-950 border border-zinc-200/40 dark:border-zinc-800/40">
+                  <button
+                    type="button"
+                    onClick={() => handlePaidByToggle('quy_chung')}
+                    className={`py-2 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      paidBy === 'quy_chung'
+                        ? 'bg-white dark:bg-zinc-800 text-emerald-600 dark:text-emerald-400 shadow-sm border border-zinc-200/20 dark:border-zinc-700/20'
+                        : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300'
+                    }`}
+                  >
+                    Sử dụng Quỹ chung 💰
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handlePaidByToggle('rieng')}
+                    className={`py-2 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      paidBy !== 'quy_chung'
+                        ? 'bg-white dark:bg-zinc-800 text-amber-600 dark:text-amber-400 shadow-sm border border-zinc-200/20 dark:border-zinc-700/20'
+                        : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300'
+                    }`}
+                  >
+                    Cuộc vui riêng (Tiền túi) 💸
+                  </button>
+                </div>
+              </div>
+
+              {/* Payer Dropdown selector (only if private event) */}
+              {paidBy !== 'quy_chung' && (
+                <div className="space-y-1.5 animate-slide-up">
+                  <label className="text-xs font-bold text-zinc-500 dark:text-zinc-400">
+                    Thành viên nào ứng tiền?
+                  </label>
+                  <div className="relative">
+                    {/* Trigger Button */}
+                    <button
+                      type="button"
+                      onClick={() => setShowPayerDropdown(!showPayerDropdown)}
+                      className="flex items-center justify-between w-full px-4 py-3 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 shadow-sm cursor-pointer transition-all text-left"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        {paidBy && paidBy !== 'quy_chung' ? (
+                          (() => {
+                            const m = initialMembers.find((member) => member.id === paidBy);
+                            if (!m) return <span className="text-zinc-400 dark:text-zinc-500">Chọn người ứng...</span>;
+                            return (
+                              <>
+                                {isUrl(m.avatar) ? (
+                                  <img src={m.avatar} alt={m.name} className="w-5 h-5 rounded-full object-cover shrink-0" />
+                                ) : (
+                                  <div className={`w-5 h-5 rounded-full flex items-center justify-center font-bold text-[8px] shrink-0 ${getAvatarColor(m.id)}`}>
+                                    {getInitials(m.name)}
+                                  </div>
+                                )}
+                                <span className="truncate text-zinc-800 dark:text-zinc-200">
+                                  {m.name}
+                                </span>
+                              </>
+                            );
+                          })()
+                        ) : (
+                          <span className="text-zinc-400 dark:text-zinc-500 font-normal">Chọn người ứng...</span>
+                        )}
+                      </div>
+                      <ChevronDown className="w-4 h-4 text-zinc-400 shrink-0" />
+                    </button>
+
+                    {/* Dropdown Overlay Click-away */}
+                    {showPayerDropdown && (
+                      <div className="fixed inset-0 z-10" onClick={() => setShowPayerDropdown(false)} />
+                    )}
+
+                    {/* Dropdown Menu */}
+                    {showPayerDropdown && (
+                      <div className="absolute top-full left-0 right-0 mt-1.5 bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 rounded-2xl shadow-xl z-20 overflow-hidden flex flex-col max-h-60 animate-in fade-in-50 slide-in-from-top-1 duration-100">
+                        {/* Search Field */}
+                        <div className="p-2 border-b border-zinc-100 dark:border-zinc-800 flex items-center gap-2 shrink-0">
+                          <Search className="w-3.5 h-3.5 text-zinc-400" />
+                          <input
+                            type="text"
+                            placeholder="Tìm thành viên..."
+                            value={payerSearchQuery}
+                            onChange={(e) => setPayerSearchQuery(e.target.value)}
+                            className="w-full bg-transparent border-0 text-xs text-zinc-800 dark:text-zinc-200 focus:outline-none placeholder-zinc-450"
+                            autoFocus
+                          />
+                          {payerSearchQuery && (
+                            <button type="button" onClick={() => setPayerSearchQuery('')} className="text-zinc-450 hover:text-zinc-600 dark:hover:text-zinc-300">
+                              <X className="w-3 h-3" />
+                            </button>
+                          )}
+                        </div>
+                        {/* Items List */}
+                        <div className="overflow-y-auto py-1 max-h-48 divide-y divide-zinc-50 dark:divide-zinc-850/50">
+                          {initialMembers
+                            .filter((m) => m.name.toLowerCase().includes(payerSearchQuery.toLowerCase()))
+                            .map((m) => {
+                              const isSelected = paidBy === m.id;
+                              return (
+                                <button
+                                  key={m.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setPaidBy(m.id);
+                                    setShowPayerDropdown(false);
+                                    setPayerSearchQuery('');
+                                  }}
+                                  className={`flex items-center justify-between w-full px-3.5 py-2.5 text-left text-xs font-semibold hover:bg-zinc-50 dark:hover:bg-zinc-800/50 cursor-pointer ${
+                                    isSelected ? 'bg-amber-500/5 text-amber-600 dark:text-amber-400' : 'text-zinc-700 dark:text-zinc-300'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-2.5 min-w-0">
+                                    {isUrl(m.avatar) ? (
+                                      <img src={m.avatar} alt={m.name} className="w-6 h-6 rounded-full object-cover shrink-0" />
+                                    ) : (
+                                      <div className={`w-6 h-6 rounded-full flex items-center justify-center font-bold text-[9px] shrink-0 ${getAvatarColor(m.id)}`}>
+                                        {getInitials(m.name)}
+                                      </div>
+                                    )}
+                                    <span className="truncate">{m.name}</span>
+                                  </div>
+                                  {isSelected && <Check className="w-4 h-4 text-amber-500 shrink-0" />}
+                                </button>
+                              );
+                            })}
+                          {initialMembers.filter((m) => m.name.toLowerCase().includes(payerSearchQuery.toLowerCase())).length === 0 && (
+                            <div className="p-4 text-center text-xs text-zinc-400 dark:text-zinc-500">
+                              Không tìm thấy thành viên
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Split Mode Selector */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-zinc-500 dark:text-zinc-400">
+                  Cách chia chi phí
+                </label>
+                <div className="grid grid-cols-2 gap-2 p-1 rounded-xl bg-zinc-100 dark:bg-zinc-950 border border-zinc-200/40 dark:border-zinc-800/40">
+                  <button
+                    type="button"
+                    onClick={() => handleSplitModeChange('equal')}
+                    className={`py-2 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      splitMode === 'equal'
+                        ? 'bg-white dark:bg-zinc-800 text-emerald-600 dark:text-emerald-400 shadow-sm border border-zinc-200/20 dark:border-zinc-700/20'
+                        : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300'
+                    }`}
+                  >
+                    Chia đều 👥
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSplitModeChange('individual')}
+                    className={`py-2 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      splitMode === 'individual'
+                        ? 'bg-white dark:bg-zinc-800 text-amber-600 dark:text-amber-400 shadow-sm border border-zinc-200/20 dark:border-zinc-700/20'
+                        : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300'
+                    }`}
+                  >
+                    Nhập số tiền riêng 🔢
+                  </button>
+                </div>
+              </div>
+
+              {/* Cost Input */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-zinc-500 dark:text-zinc-400">
+                  Tổng số tiền chi tiêu (VND) {splitMode === 'individual' && <span className="text-[10px] text-zinc-400 font-medium">(Tự động tính từ tổng tiền lẻ)</span>}
                 </label>
                 <div className="relative">
                   <input
@@ -215,8 +470,15 @@ export default function ActivitiesClient({
                     inputMode="numeric"
                     placeholder="100.000"
                     value={totalAmount}
-                    onChange={(e) => setTotalAmount(formatRawValue(e.target.value))}
-                    className="w-full pl-3 pr-8 py-3 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    onChange={(e) => {
+                      if (splitMode === 'equal') {
+                        setTotalAmount(formatRawValue(e.target.value));
+                      }
+                    }}
+                    readOnly={splitMode === 'individual'}
+                    className={`w-full pl-3 pr-8 py-3 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500 ${
+                      splitMode === 'individual' ? 'opacity-85 select-none bg-zinc-100/50 dark:bg-zinc-900/50' : ''
+                    }`}
                   />
                   <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-zinc-400">đ</span>
                 </div>
@@ -232,7 +494,7 @@ export default function ActivitiesClient({
                     <button
                       type="button"
                       onClick={selectAllParticipants}
-                      className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 hover:underline"
+                      className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 hover:underline cursor-pointer"
                     >
                       Chọn hết
                     </button>
@@ -240,44 +502,102 @@ export default function ActivitiesClient({
                     <button
                       type="button"
                       onClick={deselectAllParticipants}
-                      className="text-[10px] font-bold text-zinc-400 hover:underline"
+                      className="text-[10px] font-bold text-zinc-400 hover:underline cursor-pointer"
                     >
                       Bỏ hết
                     </button>
                   </div>
                 </div>
                 
-                <div className="grid grid-cols-2 gap-2 max-h-[140px] overflow-y-auto border border-zinc-200/50 dark:border-zinc-800/80 p-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-950">
-                  {initialMembers.map((member) => {
-                    const isChecked = participants.includes(member.id);
-                    return (
-                      <button
-                        key={member.id}
-                        type="button"
-                        onClick={() => toggleParticipant(member.id)}
-                        className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg border text-left text-xs font-semibold transition-all ${
-                          isChecked
-                            ? 'bg-emerald-500/10 dark:bg-emerald-400/10 border-emerald-500/30 text-emerald-700 dark:text-emerald-400'
-                            : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50'
-                        }`}
-                      >
-                        {isUrl(member.avatar) ? (
-                          <img
-                            src={member.avatar}
-                            alt={member.name}
-                            className="w-5 h-5 rounded-full object-cover"
-                          />
-                        ) : (
-                          <div className={`w-5 h-5 rounded-full flex items-center justify-center font-bold text-[9px] ${getAvatarColor(member.id)}`}>
-                            {getInitials(member.name)}
-                          </div>
-                        )}
-                        <span className="truncate flex-1">{member.name}</span>
-                        {isChecked && <Check className="w-3.5 h-3.5 shrink-0" />}
-                      </button>
-                    );
-                  })}
-                </div>
+                {splitMode === 'equal' ? (
+                  <div className="grid grid-cols-2 gap-2 max-h-[160px] overflow-y-auto border border-zinc-200/50 dark:border-zinc-800/80 p-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-950">
+                    {initialMembers.map((member) => {
+                      const isChecked = participants.includes(member.id);
+                      return (
+                        <button
+                          key={member.id}
+                          type="button"
+                          onClick={() => toggleParticipant(member.id)}
+                          className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg border text-left text-xs font-semibold transition-all cursor-pointer ${
+                            isChecked
+                              ? 'bg-emerald-500/10 dark:bg-emerald-400/10 border-emerald-500/30 text-emerald-700 dark:text-emerald-400'
+                              : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50'
+                          }`}
+                        >
+                          {isUrl(member.avatar) ? (
+                            <img
+                              src={member.avatar}
+                              alt={member.name}
+                              className="w-5 h-5 rounded-full object-cover"
+                            />
+                          ) : (
+                            <div className={`w-5 h-5 rounded-full flex items-center justify-center font-bold text-[9px] ${getAvatarColor(member.id)}`}>
+                              {getInitials(member.name)}
+                            </div>
+                          )}
+                          <span className="truncate flex-1">{member.name}</span>
+                          {isChecked && <Check className="w-3.5 h-3.5 shrink-0" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="space-y-2 max-h-[220px] overflow-y-auto border border-zinc-200/50 dark:border-zinc-800/80 p-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-950">
+                    {initialMembers.map((member) => {
+                      const isChecked = participants.includes(member.id);
+                      return (
+                        <div
+                          key={member.id}
+                          className={`flex items-center justify-between p-2 rounded-xl border transition-all ${
+                            isChecked
+                              ? 'bg-amber-500/5 dark:bg-amber-400/5 border-amber-500/20 text-zinc-900 dark:text-zinc-100'
+                              : 'bg-white dark:bg-zinc-900 border-zinc-200/80 dark:border-zinc-800 text-zinc-500 dark:text-zinc-400 opacity-60'
+                          }`}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => toggleParticipant(member.id)}
+                            className="flex items-center gap-2 text-left text-xs font-bold flex-1 cursor-pointer"
+                          >
+                            <div className="relative">
+                              {isUrl(member.avatar) ? (
+                                <img
+                                  src={member.avatar}
+                                  alt={member.name}
+                                  className="w-7 h-7 rounded-full object-cover"
+                                />
+                              ) : (
+                                <div className={`w-7 h-7 rounded-full flex items-center justify-center font-bold text-[10px] ${getAvatarColor(member.id)}`}>
+                                  {getInitials(member.name)}
+                                </div>
+                              )}
+                              {isChecked && (
+                                <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-amber-500 flex items-center justify-center text-white text-[8px]">
+                                  <Check className="w-2.5 h-2.5" />
+                                </span>
+                              )}
+                            </div>
+                            <span className="truncate flex-1 font-semibold">{member.name}</span>
+                          </button>
+                          
+                          {isChecked && (
+                            <div className="relative w-32 shrink-0 animate-slide-up">
+                              <input
+                                type="text"
+                                inputMode="numeric"
+                                placeholder="Nhập số tiền"
+                                value={customShares[member.id] || ''}
+                                onChange={(e) => updateCustomShare(member.id, e.target.value)}
+                                className="w-full pl-2 pr-6 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 text-right"
+                              />
+                              <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-bold text-zinc-400">đ</span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
               {/* Notes */}
@@ -300,14 +620,14 @@ export default function ActivitiesClient({
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className="w-full py-3.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 disabled:opacity-50 text-white text-sm font-semibold flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20 active:scale-98 transition-all"
+                className="w-full py-3.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 disabled:opacity-50 text-white text-sm font-semibold flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20 active:scale-98 transition-all cursor-pointer"
               >
                 {isSubmitting ? (
                   <RefreshCw className="w-4 h-4 animate-spin" />
                 ) : (
                   <Check className="w-4 h-4" />
                 )}
-                Xác Nhận Chia Đều
+                {splitMode === 'equal' ? 'Xác Nhận Chia Đều' : 'Xác Nhận Chia Lẻ'}
               </button>
             </form>
           </div>
