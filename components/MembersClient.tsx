@@ -2,19 +2,21 @@
 
 import { useState } from 'react';
 import { addMemberAction, addFundContributionAction, addReimbursementAction } from '../app/actions';
-import { Member, Transaction } from '../types';
+import { Member, Transaction, Activity } from '../types';
 import { UserPlus, Wallet, Search, TrendingUp, TrendingDown, ArrowRightLeft, Plus, DollarSign, Check, X, RefreshCw } from 'lucide-react';
 import { isUrl, getInitials, getAvatarColor } from '../lib/utils';
 
 interface MembersClientProps {
   initialMembers: Member[];
   initialTransactions: Transaction[];
+  initialActivities?: Activity[];
   openContributionByDefault?: boolean;
 }
 
 export default function MembersClient({ 
   initialMembers, 
   initialTransactions, 
+  initialActivities,
   openContributionByDefault = false 
 }: MembersClientProps) {
   
@@ -64,7 +66,20 @@ export default function MembersClient({
   );
 
   // Financial Stats
-  const groupFunds = initialMembers.reduce((sum, m) => m.current_balance > 0 ? sum + m.current_balance : sum, 0);
+  // Total contributions (positive/negative thu_quy transactions)
+  const totalFundContributions = initialTransactions
+    .filter((t) => t.type === 'thu_quy')
+    .reduce((sum, t) => sum + t.amount, 0);
+
+  // Total cost of all events
+  const totalEventExpenses = initialActivities 
+    ? initialActivities.reduce((sum, a) => sum + a.total_amount, 0)
+    : initialTransactions
+        .filter((t) => t.type === 'chi_an_choi' && t.amount < 0)
+        .reduce((sum, t) => sum + Math.abs(t.amount), 0);
+
+  // Available cash in the common fund
+  const groupFunds = totalFundContributions - totalEventExpenses;
 
   // Handle Add Member
   const handleAddMember = async (e: React.FormEvent) => {
@@ -170,7 +185,7 @@ export default function MembersClient({
             <TrendingUp className="w-5 h-5" />
           </div>
           <div>
-            <p className="text-[10px] text-zinc-400 font-bold uppercase">Lũy kế quỹ</p>
+            <p className="text-[10px] text-zinc-400 font-bold uppercase">Quỹ khả dụng</p>
             <p className="text-sm font-extrabold text-zinc-800 dark:text-zinc-100">{formatVND(groupFunds)}</p>
           </div>
         </div>

@@ -3,13 +3,51 @@
 import { revalidatePath } from 'next/cache';
 import * as sheets from '../lib/google-sheets';
 import { Member, Activity, Transaction } from '../types';
+import { getMonthsActive } from '../lib/utils';
 
 // Helper to generate unique IDs
 const generateId = (prefix: string) => `${prefix}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
 
+// Helper to recalculate and sync dynamic balances to Google Sheets
+export async function syncMemberBalances() {
+  const [members, transactions] = await Promise.all([
+    sheets.getMembers(),
+    sheets.getTransactions(),
+  ]);
+  
+  for (const member of members) {
+    const memberTransactions = transactions.filter((t) => t.member_id === member.id);
+    const totalTxAmount = memberTransactions.reduce((sum, t) => sum + t.amount, 0);
+    const monthsActive = getMonthsActive(member.id);
+    const accruedFees = monthsActive * 200000;
+    const computedBalance = totalTxAmount - accruedFees;
+    
+    // Write back to Sheets if mismatch to keep sheets display updated
+    if (member.current_balance !== computedBalance) {
+      await sheets.updateMemberBalance(member.id, computedBalance);
+    }
+  }
+}
+
 // 1. FETCH MEMBERS DATA
 export async function getMembersData(): Promise<Member[]> {
-  return await sheets.getMembers();
+  const [members, transactions] = await Promise.all([
+    sheets.getMembers(),
+    sheets.getTransactions(),
+  ]);
+
+  return members.map((member) => {
+    const memberTransactions = transactions.filter((t) => t.member_id === member.id);
+    const totalTxAmount = memberTransactions.reduce((sum, t) => sum + t.amount, 0);
+    const monthsActive = getMonthsActive(member.id);
+    const accruedFees = monthsActive * 200000;
+    const computedBalance = totalTxAmount - accruedFees;
+
+    return {
+      ...member,
+      current_balance: computedBalance,
+    };
+  });
 }
 
 // 2. FETCH ACTIVITIES DATA (WITH PAYER INFO)
@@ -24,11 +62,12 @@ export async function getActivitiesData(): Promise<Activity[]> {
   // Sort activities by date descending
   return activities
     .map((act) => {
+      const isQuyChung = act.paid_by_member_id === 'quy_chung';
       const payer = memberMap.get(act.paid_by_member_id);
       return {
         ...act,
-        payer_name: payer ? payer.name : 'Không rõ',
-        payer_avatar: payer ? payer.avatar : '',
+        payer_name: isQuyChung ? 'Quỹ chung' : (payer ? payer.name : 'Không rõ'),
+        payer_avatar: isQuyChung ? '' : (payer ? payer.avatar : ''),
       };
     })
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
@@ -83,7 +122,7 @@ export async function addMemberAction(name: string, avatarUrl?: string) {
       id: generateId('mem'),
       name: name.trim(),
       avatar,
-      current_balance: 0,
+      current_balance: -200000, // Initial active month debt
     };
 
     const success = await sheets.addMember(newMember);
@@ -102,14 +141,13 @@ export async function addMemberAction(name: string, avatarUrl?: string) {
 export async function addActivityAction(
   title: string,
   totalAmount: number,
-  paidByMemberId: string,
+  paidByMemberId: string, // Keep parameter signature for backward compatibility
   participantIds: string[],
   notes: string = ''
 ) {
   try {
     if (!title.trim()) throw new Error('Tiêu đề hoạt động không được để trống');
     if (totalAmount <= 0) throw new Error('Số tiền phải lớn hơn 0');
-    if (!paidByMemberId) throw new Error('Vui lòng chọn người ứng tiền');
     if (!participantIds || participantIds.length === 0) {
       throw new Error('Vui lòng chọn ít nhất một người tham gia');
     }
@@ -122,7 +160,7 @@ export async function addActivityAction(
       title: title.trim(),
       date,
       total_amount: totalAmount,
-      paid_by_member_id: paidByMemberId,
+      paid_by_member_id: 'quy_chung', // Always paid by group fund
       notes: notes.trim(),
     };
 
@@ -135,32 +173,15 @@ export async function addActivityAction(
     const splitAmount = Math.round(totalAmount / numParticipants);
     const transactionsToAdd: Transaction[] = [];
 
-    // Fetch members to update balances
-    const allMembers = await sheets.getMembers();
-    const memberMap = new Map(allMembers.map((m) => [m.id, m]));
-
-    // 1. Transaction representing the out-of-pocket payment by the payer
-    const payerTransaction: Transaction = {
-      id: generateId('tx_pay'),
-      member_id: paidByMemberId,
-      activity_id: activityId,
-      amount: totalAmount,
-      type: 'chi_an_choi',
-      status: 'da_tra', // The payer already spent this money
-    };
-    transactionsToAdd.push(payerTransaction);
-
-    // 2. Transactions representing each participant's share
+    // Transactions representing each participant's share
     participantIds.forEach((pId) => {
-      const isPayer = pId === paidByMemberId;
       const shareTransaction: Transaction = {
         id: generateId('tx_share'),
         member_id: pId,
         activity_id: activityId,
         amount: -splitAmount,
         type: 'chi_an_choi',
-        // Payer's own share is instantly resolved ("da_tra"), others' shares are unpaid ("chua_tra")
-        status: isPayer ? 'da_tra' : 'chua_tra',
+        status: 'da_tra', // Settled directly from group fund
       };
       transactionsToAdd.push(shareTransaction);
     });
@@ -169,28 +190,8 @@ export async function addActivityAction(
     const addTxSuccess = await sheets.addTransactions(transactionsToAdd);
     if (!addTxSuccess) throw new Error('Không thể thêm các giao dịch vào Google Sheets');
 
-    // 3. Update balances in the members list
-    // Math:
-    // - Payer gets: +totalAmount - splitAmount (if participant) or +totalAmount (if not participant)
-    // - Non-payer participant gets: -splitAmount
-    const isPayerParticipant = participantIds.includes(paidByMemberId);
-    
-    for (const member of allMembers) {
-      let balanceChange = 0;
-      
-      if (member.id === paidByMemberId) {
-        balanceChange += totalAmount;
-      }
-      
-      if (participantIds.includes(member.id)) {
-        balanceChange -= splitAmount;
-      }
-
-      if (balanceChange !== 0) {
-        const newBalance = member.current_balance + balanceChange;
-        await sheets.updateMemberBalance(member.id, newBalance);
-      }
-    }
+    // Recalculate and sync all member balances
+    await syncMemberBalances();
 
     revalidatePath('/');
     revalidatePath('/activities');
@@ -216,34 +217,8 @@ export async function confirmTransactionPaidAction(transactionId: string) {
     const updateTxSuccess = await sheets.updateTransactionStatus(transactionId, 'da_tra');
     if (!updateTxSuccess) throw new Error('Không thể cập nhật trạng thái giao dịch');
 
-    // Financial balance adjustments
-    // Since B owed X and has now paid, B's balance increases by -amount (positive value)
-    const debtAmount = Math.abs(targetTx.amount);
-    const debtorId = targetTx.member_id;
-
-    // Find who paid for this activity originally to credit them
-    const activities = await sheets.getActivities();
-    const activity = activities.find((a) => a.id === targetTx.activity_id);
-    if (!activity) throw new Error('Hoạt động liên kết không tồn tại');
-    
-    const payerId = activity.paid_by_member_id;
-
-    // Fetch members to update balances
-    const allMembers = await sheets.getMembers();
-    const debtor = allMembers.find((m) => m.id === debtorId);
-    const payer = allMembers.find((m) => m.id === payerId);
-
-    if (debtor) {
-      // Debtor balance increases by debtAmount (brings closer to 0 or positive)
-      const newDebtorBalance = debtor.current_balance + debtAmount;
-      await sheets.updateMemberBalance(debtorId, newDebtorBalance);
-    }
-
-    if (payer && payerId !== debtorId) {
-      // Payer balance decreases by debtAmount (since they have received the cash directly, their credit decreases)
-      const newPayerBalance = payer.current_balance - debtAmount;
-      await sheets.updateMemberBalance(payerId, newPayerBalance);
-    }
+    // Recalculate and sync all member balances
+    await syncMemberBalances();
 
     revalidatePath('/');
     revalidatePath('/activities');
@@ -276,13 +251,8 @@ export async function addFundContributionAction(memberId: string, amount: number
     const addTxSuccess = await sheets.addTransactions([newTx]);
     if (!addTxSuccess) throw new Error('Không thể thêm giao dịch đóng quỹ');
 
-    // Update member balance (+amount)
-    const allMembers = await sheets.getMembers();
-    const member = allMembers.find((m) => m.id === memberId);
-    if (member) {
-      const newBalance = member.current_balance + amount;
-      await sheets.updateMemberBalance(memberId, newBalance);
-    }
+    // Recalculate and sync all member balances
+    await syncMemberBalances();
 
     revalidatePath('/');
     revalidatePath('/members');
@@ -314,13 +284,8 @@ export async function addReimbursementAction(memberId: string, amount: number) {
     const addTxSuccess = await sheets.addTransactions([newTx]);
     if (!addTxSuccess) throw new Error('Không thể tạo giao dịch hoàn tiền');
 
-    // Update member balance (-amount)
-    const allMembers = await sheets.getMembers();
-    const member = allMembers.find((m) => m.id === memberId);
-    if (member) {
-      const newBalance = member.current_balance - amount;
-      await sheets.updateMemberBalance(memberId, newBalance);
-    }
+    // Recalculate and sync all member balances
+    await syncMemberBalances();
 
     revalidatePath('/');
     revalidatePath('/members');

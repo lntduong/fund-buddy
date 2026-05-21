@@ -39,3 +39,26 @@ export function getAvatarColor(id: string | undefined): string {
   
   return colors[sum % colors.length];
 }
+
+// Helper to calculate active months from member ID (which contains join timestamp)
+// e.g. "mem_1716300000000_abcd" -> join date is May 2026
+// Active months is inclusive of current month, e.g. if join date is May 2026 and current date is May 2026, returns 1
+export function getMonthsActive(memberId: string): number {
+  if (!memberId || !memberId.startsWith('mem_')) return 1;
+  const parts = memberId.split('_');
+  if (parts.length < 2) return 1;
+  
+  const timestamp = parseInt(parts[1], 10);
+  if (isNaN(timestamp)) return 1;
+  
+  const joinDate = new Date(timestamp);
+  const currentDate = new Date();
+  
+  const yearsDiff = currentDate.getFullYear() - joinDate.getFullYear();
+  const monthsDiff = currentDate.getMonth() - joinDate.getMonth();
+  
+  const activeMonths = yearsDiff * 12 + monthsDiff + 1;
+  
+  return activeMonths > 0 ? activeMonths : 1;
+}
+

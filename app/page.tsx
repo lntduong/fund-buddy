@@ -15,9 +15,22 @@ export default async function DashboardPage() {
   ]);
 
   // Calculations
-  const totalFund = members.reduce((sum, m) => (m.current_balance > 0 ? sum + m.current_balance : sum), 0);
+  // Total contributions (positive/negative thu_quy transactions)
+  const totalFundContributions = transactions
+    .filter((t) => t.type === 'thu_quy')
+    .reduce((sum, t) => sum + t.amount, 0);
+
+  // Total cost of all events
+  const totalEventExpenses = activities.reduce((sum, a) => sum + a.total_amount, 0);
+
+  // Dynamic Available Group Fund (Cash in Vault)
+  const totalFund = totalFundContributions - totalEventExpenses;
+
+  // Total Member Debts is simply the sum of all negative member balances
   const totalDebt = Math.abs(members.reduce((sum, m) => (m.current_balance < 0 ? sum + m.current_balance : sum), 0));
-  const totalExpenses = activities.reduce((sum, a) => sum + a.total_amount, 0);
+
+  // Total Expenses (Tổng chi tiêu ăn chơi)
+  const totalExpenses = totalEventExpenses;
 
   // Debtors ranking (sorted by most negative balance first)
   const debtors = members
@@ -222,18 +235,29 @@ export default async function DashboardPage() {
                       {act.title}
                     </h5>
                     <p className="text-[10px] text-zinc-400 dark:text-zinc-400 mt-1 flex items-center gap-1">
-                      {isUrl(act.payer_avatar) ? (
-                        <img
-                          src={act.payer_avatar}
-                          alt={act.payer_name}
-                          className="w-3.5 h-3.5 rounded-full object-cover"
-                        />
+                      {act.paid_by_member_id === 'quy_chung' ? (
+                        <>
+                          <span className="text-[8px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 px-1.5 py-0.5 rounded-md font-bold uppercase tracking-wider">
+                            Quỹ chung 💰
+                          </span>
+                          <span className="font-medium text-zinc-500 dark:text-zinc-300">chi trả trực tiếp</span>
+                        </>
                       ) : (
-                        <div className={`w-3.5 h-3.5 rounded-full flex items-center justify-center font-bold text-[7px] ${getAvatarColor(act.paid_by_member_id)}`}>
-                          {getInitials(act.payer_name || '')}
-                        </div>
+                        <>
+                          {isUrl(act.payer_avatar) ? (
+                            <img
+                              src={act.payer_avatar}
+                              alt={act.payer_name}
+                              className="w-3.5 h-3.5 rounded-full object-cover"
+                            />
+                          ) : (
+                            <div className={`w-3.5 h-3.5 rounded-full flex items-center justify-center font-bold text-[7px] ${getAvatarColor(act.paid_by_member_id)}`}>
+                              {getInitials(act.payer_name || '')}
+                            </div>
+                          )}
+                          <span className="font-semibold text-zinc-500 dark:text-zinc-300">{act.payer_name}</span> ứng tiền
+                        </>
                       )}
-                      <span className="font-semibold text-zinc-500 dark:text-zinc-300">{act.payer_name}</span> ứng tiền
                     </p>
                   </div>
                 </div>

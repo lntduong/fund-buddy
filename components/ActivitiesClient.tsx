@@ -29,7 +29,7 @@ export default function ActivitiesClient({
   // Form values
   const [title, setTitle] = useState('');
   const [totalAmount, setTotalAmount] = useState('');
-  const [paidBy, setPaidBy] = useState('');
+  const [paidBy, setPaidBy] = useState('quy_chung');
   const [participants, setParticipants] = useState<string[]>(initialMembers.map((m) => m.id)); // Default select all
   const [notes, setNotes] = useState('');
 
@@ -78,10 +78,7 @@ export default function ActivitiesClient({
       return;
     }
 
-    if (!paidBy) {
-      setFormError('Vui lòng chọn người ứng tiền');
-      return;
-    }
+    // Paid by is always 'quy_chung'
 
     if (participants.length === 0) {
       setFormError('Vui lòng chọn ít nhất 1 người tham gia');
@@ -103,7 +100,7 @@ export default function ActivitiesClient({
       // Reset form
       setTitle('');
       setTotalAmount('');
-      setPaidBy('');
+      setPaidBy('quy_chung');
       setParticipants(initialMembers.map((m) => m.id));
       setNotes('');
       
@@ -207,41 +204,21 @@ export default function ActivitiesClient({
                 />
               </div>
 
-              {/* Cost & Payer */}
-              <div className="grid grid-cols-2 gap-3.5">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-zinc-500 dark:text-zinc-400">
-                    Tổng số tiền (VND)
-                  </label>
-                  <div className="relative">
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      placeholder="100.000"
-                      value={totalAmount}
-                      onChange={(e) => setTotalAmount(formatRawValue(e.target.value))}
-                      className="w-full pl-3 pr-8 py-3 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                    />
-                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-zinc-400">đ</span>
-                  </div>
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-zinc-500 dark:text-zinc-400">
-                    Ai ứng tiền?
-                  </label>
-                  <select
-                    value={paidBy}
-                    onChange={(e) => setPaidBy(e.target.value)}
-                    className="w-full px-3 py-3 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  >
-                    <option value="">-- Chọn --</option>
-                    {initialMembers.map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.name}
-                      </option>
-                    ))}
-                  </select>
+              {/* Cost only (Payer removed, paid by common fund) */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-zinc-500 dark:text-zinc-400">
+                  Tổng số tiền chi tiêu (VND)
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="100.000"
+                    value={totalAmount}
+                    onChange={(e) => setTotalAmount(formatRawValue(e.target.value))}
+                    className="w-full pl-3 pr-8 py-3 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-zinc-400">đ</span>
                 </div>
               </div>
 
@@ -379,34 +356,57 @@ export default function ActivitiesClient({
                 </div>
 
                 {/* Who paid card section */}
-                <div className="bg-zinc-50 dark:bg-zinc-950 border border-zinc-200/30 dark:border-zinc-800/40 rounded-2xl p-3 flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    {isUrl(act.payer_avatar) ? (
-                      <img
-                        src={act.payer_avatar}
-                        alt={act.payer_name}
-                        className="w-8 h-8 rounded-full object-cover"
-                      />
-                    ) : (
-                      <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs ${getAvatarColor(act.paid_by_member_id)}`}>
-                        {getInitials(act.payer_name || '')}
+                {act.paid_by_member_id === 'quy_chung' ? (
+                  <div className="bg-emerald-500/5 dark:bg-emerald-400/5 border border-emerald-500/10 dark:border-emerald-400/10 rounded-2xl p-3 flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-full flex items-center justify-center font-bold text-base bg-gradient-to-tr from-emerald-500 to-teal-400 text-white">
+                        💰
                       </div>
-                    )}
-                    <div>
-                      <p className="text-[9px] text-zinc-400 font-bold uppercase">
-                        Người ứng tiền
-                      </p>
-                      <p className="text-xs font-bold text-zinc-800 dark:text-zinc-100 mt-0.5">
-                        {act.payer_name}
-                      </p>
+                      <div>
+                        <p className="text-[9px] text-emerald-600 dark:text-emerald-400 font-bold uppercase tracking-wider">
+                          Nguồn thanh toán
+                        </p>
+                        <p className="text-xs font-extrabold text-zinc-800 dark:text-zinc-100 mt-0.5">
+                          Quỹ chung nhóm
+                        </p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-[9px] font-extrabold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-full uppercase tracking-wider">
+                        Chi từ quỹ
+                      </span>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <span className="text-[9px] font-extrabold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-full uppercase">
-                      Đã thanh toán
-                    </span>
+                ) : (
+                  <div className="bg-zinc-50 dark:bg-zinc-950 border border-zinc-200/30 dark:border-zinc-800/40 rounded-2xl p-3 flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      {isUrl(act.payer_avatar) ? (
+                        <img
+                          src={act.payer_avatar}
+                          alt={act.payer_name}
+                          className="w-8 h-8 rounded-full object-cover"
+                        />
+                      ) : (
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs ${getAvatarColor(act.paid_by_member_id)}`}>
+                          {getInitials(act.payer_name || '')}
+                        </div>
+                      )}
+                      <div>
+                        <p className="text-[9px] text-zinc-400 font-bold uppercase">
+                          Người ứng tiền
+                        </p>
+                        <p className="text-xs font-bold text-zinc-800 dark:text-zinc-100 mt-0.5">
+                          {act.payer_name}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-[9px] font-extrabold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-full uppercase">
+                        Đã thanh toán
+                      </span>
+                    </div>
                   </div>
-                </div>
+                )}
 
                 {/* Participants detail split breakdown */}
                 <div className="space-y-2.5">
@@ -447,7 +447,12 @@ export default function ActivitiesClient({
                           </div>
 
                           <div className="flex items-center gap-2">
-                            {isPayer ? (
+                            {act.paid_by_member_id === 'quy_chung' ? (
+                              <span className="text-[9.5px] font-extrabold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-full uppercase flex items-center gap-0.5 tracking-wider">
+                                <CheckCircle2 className="w-3 h-3" />
+                                Đã trừ quỹ
+                              </span>
+                            ) : isPayer ? (
                               <span className="text-[9.5px] font-semibold text-zinc-400 flex items-center gap-0.5 bg-zinc-100 dark:bg-zinc-700/50 px-2 py-0.5 rounded-md">
                                 Tự chi trả
                               </span>
