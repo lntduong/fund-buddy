@@ -3,7 +3,6 @@
 import { revalidatePath } from 'next/cache';
 import * as sheets from '../lib/google-sheets';
 import { Member, Activity, Transaction } from '../types';
-import { getMonthsActive } from '../lib/utils';
 
 // Helper to generate unique IDs
 const generateId = (prefix: string) => `${prefix}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
@@ -17,9 +16,6 @@ function computeMemberBalances(
   const activityMap = new Map(activities.map((a) => [a.id, a]));
 
   return members.map((member) => {
-    const monthsActive = getMonthsActive(member.id);
-    const accruedFees = monthsActive * 200000;
-
     const memberTransactions = transactions.filter((t) => t.member_id === member.id);
 
     // 1. Sum of all 'thu_quy' (fund contributions/reimbursements) transactions
@@ -54,7 +50,7 @@ function computeMemberBalances(
       .filter((t) => myPaidPrivateActIds.has(t.activity_id))
       .reduce((sum, t) => sum + Math.abs(t.amount), 0); // these should be positive credits
 
-    const computedBalance = totalThuQuy - accruedFees + commonExpenses + unpaidPrivateDebt + unpaidPrivateCredit;
+    const computedBalance = totalThuQuy + commonExpenses + unpaidPrivateDebt + unpaidPrivateCredit;
 
     return {
       ...member,
@@ -164,7 +160,7 @@ export async function addMemberAction(name: string, avatarUrl?: string) {
       id: generateId('mem'),
       name: name.trim(),
       avatar,
-      current_balance: -200000, // Initial active month debt
+      current_balance: 0,
     };
 
     const success = await sheets.addMember(newMember);
@@ -288,7 +284,7 @@ export async function confirmTransactionPaidAction(transactionId: string) {
 export async function addFundContributionAction(memberId: string, amount: number, activityId: string = 'general_fund') {
   try {
     if (!memberId) throw new Error('Vui lòng chọn thành viên đóng quỹ');
-    if (amount <= 0) throw new Error('Số tiền đóng quỹ phải lớn hơn 0');
+    if (amount === 0) throw new Error('Số tiền đóng quỹ phải khác 0');
 
     const transactionId = generateId('tx_fund');
     

@@ -25,6 +25,7 @@ export default function ActivitiesClient({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
   const [formSuccess, setFormSuccess] = useState('');
+  const [selectedMonthFilter, setSelectedMonthFilter] = useState('all');
 
   // Form values
   const [title, setTitle] = useState('');
@@ -37,6 +38,7 @@ export default function ActivitiesClient({
 
   // Custom dropdown states
   const [showPayerDropdown, setShowPayerDropdown] = useState(false);
+  const [showMonthDropdown, setShowMonthDropdown] = useState(false);
   const [payerSearchQuery, setPayerSearchQuery] = useState('');
 
   const handlePaidByToggle = (mode: 'quy_chung' | 'rieng') => {
@@ -213,6 +215,24 @@ export default function ActivitiesClient({
     }).format(amount);
   };
 
+  const getActivityMonthKey = (date: string) => {
+    const [year, month] = date.split('-');
+    return year && month ? `${year}-${month}` : 'unknown';
+  };
+
+  const formatMonthLabel = (monthKey: string) => {
+    if (monthKey === 'unknown') return 'Không rõ tháng';
+    const [year, month] = monthKey.split('-');
+    return `Tháng ${month}/${year}`;
+  };
+
+  const monthOptions = Array.from(
+    new Set(initialActivities.map((act) => getActivityMonthKey(act.date)))
+  ).sort((a, b) => b.localeCompare(a));
+  const selectedMonthLabel = selectedMonthFilter === 'all'
+    ? 'Tất cả tháng'
+    : formatMonthLabel(selectedMonthFilter);
+
   // Map participants and transaction details to each activity
   const activitiesWithParticipants = initialActivities.map((act) => {
     // Find all transaction records associated with this activity ID
@@ -234,6 +254,10 @@ export default function ActivitiesClient({
     };
   });
 
+  const filteredActivities = selectedMonthFilter === 'all'
+    ? activitiesWithParticipants
+    : activitiesWithParticipants.filter((act) => getActivityMonthKey(act.date) === selectedMonthFilter);
+
   return (
     <div className="space-y-6">
       {/* Title Section */}
@@ -253,6 +277,57 @@ export default function ActivitiesClient({
           <PlusCircle className="w-4.5 h-4.5" />
           Thêm
         </button>
+      </div>
+
+      <div className="relative">
+        <button
+          type="button"
+          onClick={() => setShowMonthDropdown(!showMonthDropdown)}
+          className="flex items-center justify-between w-full px-4 py-3 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-sm cursor-pointer transition-all text-left"
+        >
+          <div className="flex items-center gap-2 min-w-0">
+            <Calendar className="w-4 h-4 text-emerald-500 shrink-0" />
+            <span className="truncate text-zinc-800 dark:text-zinc-200">
+              {selectedMonthLabel}
+            </span>
+          </div>
+          <ChevronDown className="w-4 h-4 text-zinc-400 shrink-0" />
+        </button>
+
+        {showMonthDropdown && (
+          <div className="fixed inset-0 z-10" onClick={() => setShowMonthDropdown(false)} />
+        )}
+
+        {showMonthDropdown && (
+          <div className="absolute top-full left-0 right-0 mt-1.5 bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 rounded-2xl shadow-xl z-20 overflow-hidden flex flex-col max-h-60 animate-in fade-in-50 slide-in-from-top-1 duration-100">
+            <div className="overflow-y-auto py-1 max-h-56 divide-y divide-zinc-50 dark:divide-zinc-850/50">
+              {['all', ...monthOptions].map((monthKey) => {
+                const isSelected = selectedMonthFilter === monthKey;
+                return (
+                  <button
+                    key={monthKey}
+                    type="button"
+                    onClick={() => {
+                      setSelectedMonthFilter(monthKey);
+                      setShowMonthDropdown(false);
+                    }}
+                    className={`flex items-center justify-between w-full px-3.5 py-2.5 text-left text-xs font-semibold hover:bg-zinc-50 dark:hover:bg-zinc-800/50 cursor-pointer ${
+                      isSelected ? 'bg-emerald-500/5 text-emerald-600 dark:text-emerald-400' : 'text-zinc-700 dark:text-zinc-300'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <Calendar className="w-4 h-4 text-emerald-500 shrink-0" />
+                      <span className="truncate">
+                        {monthKey === 'all' ? 'Tất cả tháng' : formatMonthLabel(monthKey)}
+                      </span>
+                    </div>
+                    {isSelected && <Check className="w-4 h-4 text-emerald-500 shrink-0" />}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Add Activity Slide-up Sheet */}
@@ -636,14 +711,18 @@ export default function ActivitiesClient({
 
       {/* Activities Feed */}
       <div className="space-y-5">
-        {activitiesWithParticipants.length === 0 ? (
+        {filteredActivities.length === 0 ? (
           <div className="py-12 text-center text-zinc-400 dark:text-zinc-500 bg-white dark:bg-zinc-800 border border-zinc-200/50 dark:border-zinc-700/50 rounded-3xl p-6 space-y-2">
             <span className="text-3xl">🍕</span>
-            <p className="text-xs font-semibold">Chưa có nhật ký ăn chơi nào được lưu.</p>
+            <p className="text-xs font-semibold">
+              {selectedMonthFilter === 'all'
+                ? 'Chưa có nhật ký ăn chơi nào được lưu.'
+                : `Chưa có sự kiện nào trong ${formatMonthLabel(selectedMonthFilter).toLowerCase()}.`}
+            </p>
             <p className="text-[10px] text-zinc-400">Hãy nhấn nút "Thêm" phía trên để tạo sự kiện đầu tiên.</p>
           </div>
         ) : (
-          activitiesWithParticipants.map((act) => {
+          filteredActivities.map((act) => {
             return (
               <div
                 key={act.id}

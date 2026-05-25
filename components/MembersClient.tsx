@@ -58,13 +58,24 @@ export default function MembersClient({
 
   // Auto-format currency typing (Vietnamese dots separation)
   const formatRawValue = (val: string) => {
+    const isNegative = val.includes('-');
     const numeric = val.replace(/[^0-9]/g, '');
-    if (!numeric) return '';
-    return new Intl.NumberFormat('vi-VN').format(parseInt(numeric));
+    if (!numeric) return isNegative ? '-' : '';
+    const formatted = new Intl.NumberFormat('vi-VN').format(parseInt(numeric));
+    return isNegative ? `-${formatted}` : formatted;
   };
 
   const getNumericValue = (formatted: string) => {
-    return parseInt(formatted.replace(/[^0-9]/g, '')) || 0;
+    const isNegative = formatted.includes('-');
+    const value = parseInt(formatted.replace(/[^0-9]/g, '')) || 0;
+    return isNegative ? -value : value;
+  };
+
+  const toggleFundAmountSign = () => {
+    setFundAmount((current) => {
+      if (!current) return '-';
+      return current.includes('-') ? current.replace('-', '') : `-${current}`;
+    });
   };
 
   // Helper to generate grid of days for calendar
@@ -167,8 +178,12 @@ export default function MembersClient({
     }
 
     const amount = getNumericValue(fundAmount);
-    if (amount <= 0) {
+    if (isReimbursement && amount <= 0) {
       setFormError('Số tiền phải lớn hơn 0');
+      return;
+    }
+    if (!isReimbursement && amount === 0) {
+      setFormError('Số tiền phải khác 0');
       return;
     }
 
@@ -610,13 +625,28 @@ export default function MembersClient({
                   Số tiền (VND)
                 </label>
                 <div className="relative">
+                  {!isReimbursement && (
+                    <button
+                      type="button"
+                      onClick={toggleFundAmountSign}
+                      className={`absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-lg text-sm font-extrabold border transition-all active:scale-95 ${
+                        fundAmount.includes('-')
+                          ? 'bg-rose-500/10 border-rose-500/20 text-rose-600 dark:text-rose-400'
+                          : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400'
+                      }`}
+                    >
+                      {fundAmount.includes('-') ? '-' : '+'}
+                    </button>
+                  )}
                   <input
                     type="text"
-                    inputMode="numeric"
-                    placeholder="Ví dụ: 100.000"
+                    inputMode="decimal"
+                    placeholder={isReimbursement ? 'Ví dụ: 100.000' : 'Ví dụ: 100.000 hoặc -100.000'}
                     value={fundAmount}
                     onChange={(e) => setFundAmount(formatRawValue(e.target.value))}
-                    className="w-full pl-4 pr-10 py-3 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    className={`w-full pr-10 py-3 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500 ${
+                      isReimbursement ? 'pl-4' : 'pl-12'
+                    }`}
                   />
                   <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-bold text-zinc-400">
                     đ
